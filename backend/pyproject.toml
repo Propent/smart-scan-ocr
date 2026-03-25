@@ -1,0 +1,19 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "docxtpl>=0.20.2",
+    "easyocr>=1.7.2",
+    "fastapi>=0.135.2",
+    "jinja2>=3.1.6",
+    "pydantic-settings>=2.13.1",
+    "python-multipart>=0.0.22",
+    "reportlab>=4.2.5",
+    "torch>=2.11.0",
+    "torchvision>=0.26.0",
+    "uvicorn[standard]>=0.42.0",
+    "pymupdf>=1.27.2.2",
+]

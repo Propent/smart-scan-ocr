@@ -1,0 +1,24 @@
+# Python artifacts
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Environment files
+.env
+.env.local
+
+# Storage directories
+uploads/
+outputs/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,14 @@
+# Node
+node_modules/
+
+# Docker
+.docker-compose.yml.swp
+
+# Python
+__pycache__/
+
+# OS
+.DS_Store
+
+# Local examples
+example/
