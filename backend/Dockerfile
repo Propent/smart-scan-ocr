@@ -2,13 +2,19 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for Tesseract, Pandoc, and WeasyPrint
-RUN apt-get update && apt-get install -y \
+# Install system dependencies
+# We split them to identify failures easily and use more robust names
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     tesseract-ocr \
     libtesseract-dev \
     pandoc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install WeasyPrint dependencies (GTK stack)
+# Using generic names where possible
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libharfbuzz0b \
     libpangoft2-1.0-0 \
@@ -17,20 +23,18 @@ RUN apt-get update && apt-get install -y \
     shared-mime-info \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for package management
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Set uv to use the system Python
 ENV UV_PYTHON_PREFERENCE=only-system
 
-# Copy only the project file
+# Copy dependency files
 COPY pyproject.toml ./
 
-# Install dependencies (will now include pytesseract instead of easyocr/torch)
+# Install dependencies
 RUN uv sync --no-dev
 
-# Copy the application code
+# Copy application code
 COPY . .
 
-# Command to run the application using the Render $PORT
+# Start the application
 CMD [".venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
