@@ -3,7 +3,6 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # Install system dependencies
-# We split them to identify failures easily and use more robust names
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -12,12 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install WeasyPrint dependencies (GTK stack)
-# Using generic names where possible
+# Install WeasyPrint dependencies (GTK stack) - using more robust meta-packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpango-1.0-0 \
-    libharfbuzz0b \
-    libpangoft2-1.0-0 \
+    libpangocairo-1.0-0 \
     libgdk-pixbuf2.0-0 \
     libffi-dev \
     shared-mime-info \
