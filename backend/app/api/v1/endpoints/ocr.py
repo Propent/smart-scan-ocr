@@ -61,7 +61,13 @@ def run_ocr_task(task_id: str, file_contents: bytes, filename: str):
         pdf_bytes = pdf_service.create_pdf_from_ocr(file_contents, results)
         
         # Mark as complete
-        task_store.update_task(task_id, status="completed", progress=100, result=pdf_bytes)
+        task_store.update_task(
+            task_id, 
+            status="completed", 
+            progress=100, 
+            result=pdf_bytes,
+            result_data=results # Store the text results too
+        )
     except Exception as e:
         task_store.update_task(task_id, status="failed", error=str(e))
 
@@ -90,7 +96,8 @@ async def get_task_status(task_id: str):
     return {
         "status": task["status"],
         "progress": task["progress"],
-        "error": task["error"]
+        "error": task["error"],
+        "result_data": task.get("result_data")
     }
 
 @router.get("/download/{task_id}")

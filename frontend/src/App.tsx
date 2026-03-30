@@ -11,20 +11,20 @@ function App() {
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
 
+  const [ocrResults, setOcrResults] = useState<any[] | null>(null)
+
   const pollStatus = async (id: string) => {
     try {
       const response = await axios.get(`${API_URL}/ocr/status/${id}`)
-      const { status, progress, error } = response.data
-      
+      const { status, progress, result_data } = response.data
+
       setProgress(progress)
 
       if (status === 'completed') {
+        setOcrResults(result_data || [])
         setLoading(false)
         setStep(2)
-        // Automatically download once finished
-        downloadFile(id)
-      } else if (status === 'failed') {
-        setLoading(false)
+      } else if (status === 'failed') {        setLoading(false)
         alert(`OCR Failed: ${error}`)
       } else {
         // Continue polling
@@ -149,6 +149,41 @@ function App() {
             </div>
             <h2 className="text-2xl font-bold">PDF Generated!</h2>
             <p className="text-gray-600">Your scanned document is ready and downloading.</p>
+
+            {ocrResults && ocrResults.length > 0 && (
+              <div className="mt-8 text-left border rounded-lg overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2 border-b font-semibold text-sm text-gray-700">
+                  Extracted Text Preview
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-2 text-left">Text</th>
+                        <th className="px-4 py-2 text-right">Confidence</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {ocrResults.map((res, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-2">{res.text}</td>
+                          <td className="px-4 py-2 text-right">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              res.confidence > 0.8 ? 'bg-green-100 text-green-700' : 
+                              res.confidence > 0.5 ? 'bg-yellow-100 text-yellow-700' : 
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {(res.confidence * 100).toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-4 justify-center">
               <button 
                 onClick={() => setStep(1)}
