@@ -15,22 +15,17 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Set uv to use the system Python and not try to download 3.14
 ENV UV_PYTHON_PREFERENCE=only-system
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
+# Copy only the project file, NOT the lock file
+COPY pyproject.toml ./
 
-# Install dependencies using uv sync
+# Install dependencies (this will generate a fresh internal lock for 3.12)
 RUN uv sync --no-dev
 
-# Pre-download EasyOCR models to avoid timeouts and high memory usage during the first request
-# This ensures the model is baked into the image.
+# Pre-download EasyOCR models
 RUN .venv/bin/python -c "import easyocr; reader = easyocr.Reader(['en'], gpu=False)"
 
 # Copy the application code
 COPY . .
 
-# Expose port
-EXPOSE 8080
-
-# Command to run the application
-# Use uv run to ensure we use the installed virtualenv
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Command to run the application using the Render $PORT
+CMD [".venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
