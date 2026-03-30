@@ -14,8 +14,8 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv sync (more reliable than direct pip install)
-RUN uv sync --frozen --no-dev
+# Install dependencies using uv sync
+RUN uv sync --no-dev
 
 # Pre-download EasyOCR models to avoid timeouts and high memory usage during the first request
 # This ensures the model is baked into the image.
