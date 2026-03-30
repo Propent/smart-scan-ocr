@@ -2,27 +2,25 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for OCR and opencv
+# Install system dependencies for Tesseract and opencv
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
-    build-essential \
+    tesseract-ocr \
+    libtesseract-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Set uv to use the system Python and not try to download 3.14
+# Set uv to use the system Python
 ENV UV_PYTHON_PREFERENCE=only-system
 
-# Copy only the project file, NOT the lock file
+# Copy only the project file
 COPY pyproject.toml ./
 
-# Install dependencies (this will generate a fresh internal lock for 3.12)
+# Install dependencies (will now include pytesseract instead of easyocr/torch)
 RUN uv sync --no-dev
-
-# Pre-download EasyOCR models
-RUN .venv/bin/python -c "import easyocr; reader = easyocr.Reader(['en'], gpu=False)"
 
 # Copy the application code
 COPY . .
