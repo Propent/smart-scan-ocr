@@ -1,65 +1,75 @@
-# OCR Scan-to-PDF Engine
+# Smart Scan OCR (Searchable PDF Engine)
 
-A high-performance application designed to convert document images into searchable-style PDFs using OCR (EasyOCR).
+A high-performance, lightweight OCR engine that converts document images and PDFs into searchable, text-layered PDFs. Optimized for deployment on free-tier platforms like Render and Netlify.
+
+## Project Structure
+
+```text
+smart-scan-ocr/
+├── backend/                # FastAPI Backend
+│   ├── app/                # Application logic (FastAPI)
+│   ├── example/            # Sample input/output files
+│   ├── Dockerfile          # Production Docker config
+│   ├── pyproject.toml      # Python dependencies (uv)
+│   └── test_accuracy.py    # Accuracy benchmarking script
+├── frontend/               # React (Vite) Frontend
+│   ├── src/                # React components & logic
+│   ├── public/             # Static assets & Netlify config
+│   └── package.json        # Node.js dependencies
+└── docker-compose.yml      # Local development config
+```
 
 ## Features
-- **OCR Text Extraction:** Powered by EasyOCR for accurate text recognition across multiple pages.
-- **Asynchronous Workflow:** Background tasks ensure a responsive UI, even for large documents.
-- **Real-time Progress Tracking:** Visual feedback for both OCR and PDF generation stages.
-- **Searchable PDF Generation:** Automatically generates a PDF containing original images and extracted text overlay.
-- **Modern UI:** Clean, two-step reactive workflow with a progress bar and automatic downloading.
-- **Self-Contained Dependencies:** No external system binaries like Poppler required.
 
-## Technical Improvements
-- **Backend:** Switched from `pdf2image` to `PyMuPDF` (fitz) for reliable cross-platform PDF handling.
-- **Task Management:** In-memory `TaskStore` for efficient job tracking and status polling.
-- **Frontend:** Robust polling mechanism with progress-to-percentage mapping.
-
-## Production Workflow
-1. **Upload:** User uploads an image (JPG, PNG, WebP).
-2. **Process:** Backend runs OCR and generates a PDF using ReportLab.
-3. **Download:** User receives a downloadable PDF version of their document.
-
-## Getting Started
-
-### Using Docker (Recommended for Production)
-The quickest way to deploy the entire stack:
-```bash
-docker-compose up --build -d
-```
-- **Frontend:** `http://localhost:5173`
-- **Backend API:** `http://localhost:8080`
-- **API Documentation:** `http://localhost:8080/docs`
-
-### Manual Installation
-
-#### Backend
-1. Navigate to the backend directory: `cd backend`
-2. Install dependencies: `uv sync`
-3. Configure your `.env` file from `.env.example`.
-4. Run the server: `uv run uvicorn app.main:app --port 8080`
-
-#### Frontend
-1. Navigate to the frontend directory: `cd frontend`
-2. Install dependencies: `npm install`
-3. Configure your `.env` file from `.env.example`.
-4. Run for development: `npm run dev`
-5. Build for production: `npm run build`
-
-## Environment Variables
-
-### Backend (`backend/.env`)
-- `PROJECT_NAME`: Title of the API.
-- `BACKEND_CORS_ORIGINS`: JSON list of allowed origins.
-- `OCR_LANGUAGES`: JSON list of languages for EasyOCR.
-
-### Frontend (`frontend/.env`)
-- `VITE_API_URL`: The full URL to the backend API (e.g., `http://localhost:8080/api/v1`).
+- **Asynchronous OCR:** Handles large documents in the background with real-time progress tracking.
+- **Searchable PDFs:** Generates PDFs with invisible text layers for easy searching and copying.
+- **Tesseract Integration:** Uses Tesseract OCR for fast, low-memory processing (fits in 512MB RAM).
+- **Accuracy Preview:** View extracted text and confidence scores directly in the UI.
+- **Multi-Format Support:** Processes images (JPG, PNG) and existing PDFs.
 
 ## Tech Stack
-- **Frontend:** React, TypeScript, Vite, Tailwind CSS, Lucide Icons.
-- **Backend:** FastAPI, EasyOCR, ReportLab, Pydantic.
-- **Infrastructure:** Docker, Docker Compose.
+
+- **Backend:** FastAPI, Pytesseract, ReportLab, PyMuPDF (fitz), OpenCV.
+- **Frontend:** React 19, Vite, Tailwind CSS, Lucide Icons, Axios.
+- **Infrastructure:** Docker, Render (Backend), Netlify/Vercel (Frontend).
+
+## Local Development
+
+### Prerequisites
+
+- [Tesseract OCR](https://tesseract-ocr.github.io/tessdoc/Installation.html) installed on your system.
+- Python 3.12+ and [uv](https://github.com/astral-sh/uv) (recommended).
+- Node.js 18+.
+
+### Backend Setup
+
+1. `cd backend`
+2. `cp .env.example .env`
+3. `uv sync`
+4. `uv run uvicorn app.main:app --reload --port 8080`
+
+### Frontend Setup
+
+1. `cd frontend`
+2. `npm install`
+3. Set `VITE_API_URL=http://localhost:8080/api/v1` in `.env`
+4. `npm run dev`
+
+## Deployment
+
+### Backend (Render)
+- **Runtime:** Docker
+- **Root Directory:** `backend`
+- **Port:** 8080
+- **Env Vars:**
+    - `BACKEND_CORS_ORIGINS`: `["https://your-frontend-url.netlify.app"]`
+
+### Frontend (Netlify / Vercel)
+- **Build Command:** `npm run build`
+- **Output Directory:** `dist`
+- **Root Directory:** `frontend`
+- **Env Vars:**
+    - `VITE_API_URL`: `https://your-backend-url.onrender.com/api/v1`
 
 ---
-&copy; 2026 OCR Template Engine
+&copy; 2026 Smart Scan OCR Engine
