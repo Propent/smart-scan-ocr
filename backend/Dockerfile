@@ -6,10 +6,14 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv for package management
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Set uv to use the system Python and not try to download 3.14
+ENV UV_PYTHON_PREFERENCE=only-system
 
 # Copy dependency files
 COPY pyproject.toml uv.lock ./
