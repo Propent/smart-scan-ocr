@@ -1,0 +1,26 @@
+[
+  {
+    "text": "The quick brown fox jumps over the lazy dog.",
+    "confidence": 0.9982,
+    "bbox": [[50, 100], [400, 100], [400, 120], [50, 120]],
+    "page": 1
+  },
+  {
+    "text": "Account #12345-6789 | Total: $1,234.56",
+    "confidence": 0.9845,
+    "bbox": [[50, 150], [420, 150], [420, 170], [50, 170]],
+    "page": 1
+  },
+  {
+    "text": "Date: 2026-03-30",
+    "confidence": 0.9991,
+    "bbox": [[50, 200], [200, 200], [200, 220], [50, 220]],
+    "page": 1
+  },
+  {
+    "text": "123 OCR Lane, Scan City, 90210",
+    "confidence": 0.9762,
+    "bbox": [[50, 225], [350, 225], [350, 245], [50, 245]],
+    "page": 1
+  }
+]

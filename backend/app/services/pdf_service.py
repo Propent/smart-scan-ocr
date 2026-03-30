@@ -8,60 +8,56 @@ import os
 class PDFService:
     def create_pdf_from_ocr(self, original_bytes: bytes, ocr_results: list[dict]) -> bytes:
         """
-        Creates a PDF with the original content and its extracted text.
+        Creates a SEARCHABLE PDF with an invisible text layer overlaying the visual scan.
         """
         output_io = io.BytesIO()
         c = canvas.Canvas(output_io, pagesize=A4)
-        a4_width, a4_height = A4
+        a4_w, a4_h = A4
 
-        # If it's a PDF, we'll convert pages to images for the visual part of the scan
+        # 1. Get visual pages (as high-res images for the PDF background)
         if original_bytes.startswith(b'%PDF'):
-            try:
-                doc = fitz.open(stream=original_bytes, filetype="pdf")
-                images = []
-                for page in doc:
-                    pix = page.get_pixmap()
-                    img_data = pix.tobytes("png")
-                    images.append(Image.open(io.BytesIO(img_data)))
-                doc.close()
-            except Exception as e:
-                print(f"DEBUG: PDF conversion failed: {str(e)}")
-                raise ValueError(f"Failed to process PDF file: {str(e)}")
+            doc = fitz.open(stream=original_bytes, filetype="pdf")
+            images = []
+            for page in doc:
+                pix = page.get_pixmap(dpi=300) # Ensure high visual quality
+                img_data = pix.tobytes("png")
+                images.append(Image.open(io.BytesIO(img_data)))
+            doc.close()
         else:
-            try:
-                images = [Image.open(io.BytesIO(original_bytes))]
-            except Exception as e:
-                print(f"DEBUG: Image identification failed in PDF generation: {str(e)}")
-                raise ValueError(f"Unsupported or invalid image format for PDF: {str(e)}")
+            images = [Image.open(io.BytesIO(original_bytes))]
 
-        # Add visual pages
-        for img in images:
-            img_width, img_height = img.size
-            scale = min(a4_width / img_width, a4_height / img_height)
-            new_width = img_width * scale
-            new_height = img_height * scale
-            c.drawInlineImage(img, (a4_width - new_width) / 2, (a4_height - new_height) / 2, width=new_width, height=new_height)
+        # 2. Add visual pages and their corresponding invisible text
+        for i, img in enumerate(images):
+            img_w, img_h = img.size
+            scale_x = a4_w / img_w
+            scale_y = a4_h / img_h
+            
+            # Draw the visual background (the "scan")
+            c.drawInlineImage(img, 0, 0, width=a4_w, height=a4_h)
+            
+            # Overlay invisible text layer for this page
+            page_num = i + 1
+            page_text = [res for res in ocr_results if res.get('page', 1) == page_num]
+            
+            # Set font for the invisible layer
+            c.setFont("Helvetica", 8)
+            text_object = c.beginText()
+            
+            # We use a transparent fill for the text to make it invisible but selectable
+            c.setFillAlpha(0.0) 
+            
+            for res in page_text:
+                text = res['text']
+                bbox = res['bbox'] # Format: [[tl_x, tl_y], [tr_x, tr_y], [br_x, br_y], [bl_x, bl_y]]
+                
+                # Use the top-left coordinate, scaled to A4 size
+                # Note: ReportLab Y coordinate starts from bottom
+                x = bbox[0][0] * scale_x
+                y = a4_h - (bbox[0][1] * scale_y)
+                
+                c.drawString(x, y, text)
+            
             c.showPage()
-        
-        # Add text pages
-        c.setFont("Helvetica-Bold", 16)
-        c.drawString(50, a4_height - 50, "Extracted Text Results")
-        
-        c.setFont("Helvetica", 10)
-        y_position = a4_height - 80
-        
-        for res in ocr_results:
-            text = res['text']
-            page_info = f" [Pg {res.get('page', 1)}]" if 'page' in res else ""
-            full_text = text + page_info
-            
-            if y_position < 50:
-                c.showPage()
-                c.setFont("Helvetica", 10)
-                y_position = a4_height - 50
-            
-            c.drawString(50, y_position, full_text)
-            y_position -= 15
             
         c.save()
         return output_io.getvalue()
