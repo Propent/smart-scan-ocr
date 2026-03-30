@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FileText, Image as ImageIcon, CheckCircle, Download, Loader2 } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { FileText, Image as ImageIcon, CheckCircle, Download, Loader2, X } from 'lucide-react'
 import axios from 'axios'
 
 function App() {
@@ -8,15 +8,26 @@ function App() {
   const [progress, setProgress] = useState(0)
   const [step, setStep] = useState(1)
   const [taskId, setTaskId] = useState<string | null>(null)
+  const activeTaskRef = useRef<string | null>(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080/api/v1'
 
   const [ocrResults, setOcrResults] = useState<any[] | null>(null)
 
+  const handleUnselect = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setOcrFile(null)
+  }
+
   const pollStatus = async (id: string) => {
     try {
+      if (activeTaskRef.current !== id) return
+
       const response = await axios.get(`${API_URL}/ocr/status/${id}`)
       const { status, progress, result_data, error: apiError } = response.data
+
+      if (activeTaskRef.current !== id) return
 
       setProgress(progress)
 
@@ -24,18 +35,29 @@ function App() {
         setOcrResults(result_data || [])
         setLoading(false)
         setStep(2)
+        downloadFile(id)
       } else if (status === 'failed') {
         setLoading(false)
         alert(`OCR Failed: ${apiError}`)
+        // Add a diagnostic hint
+        console.error("Diagnostic: If this persists, the file might be corrupted. Check local 'backend/uploads/failing_file.bin'")
       } else {
-        // Continue polling
         setTimeout(() => pollStatus(id), 1000)
       }
     } catch (error) {
-      console.error('Polling Error:', error)
-      setLoading(false)
-      alert('Error tracking OCR progress.')
+      if (activeTaskRef.current === id) {
+        console.error('Polling Error:', error)
+        setLoading(false)
+        alert('Error tracking OCR progress.')
+      }
     }
+  }
+
+  const handleCancel = () => {
+    activeTaskRef.current = null
+    setTaskId(null)
+    setLoading(false)
+    setProgress(0)
   }
 
   const downloadFile = async (id: string) => {
@@ -59,13 +81,21 @@ function App() {
     if (!ocrFile) return
     setLoading(true)
     setProgress(0)
-    const formData = new FormData()
-    formData.append('file', ocrFile)
     
     try {
-      const response = await axios.post(`${API_URL}/ocr/scan-to-pdf-async`, formData)
+      // Create a clean binary blob from the file to ensure no encoding issues
+      const fileBlob = new Blob([ocrFile], { type: ocrFile.type })
+      const formData = new FormData()
+      formData.append('file', fileBlob, ocrFile.name)
+      
+      const response = await axios.post(`${API_URL}/ocr/scan-to-pdf-async`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      })
       const { task_id } = response.data
       setTaskId(task_id)
+      activeTaskRef.current = task_id
       pollStatus(task_id)
     } catch (error) {
       console.error('Scan Error:', error)
@@ -111,24 +141,46 @@ function App() {
                 className="hidden" 
                 id="ocr-upload"
               />
-              <label htmlFor="ocr-upload" className="cursor-pointer text-indigo-600 font-semibold hover:underline">
+              <label htmlFor="ocr-upload" className="cursor-pointer text-indigo-600 font-semibold hover:underline flex items-center justify-center gap-2 group">
                 {ocrFile ? ocrFile.name : 'Select any file for scanning'}
+                {ocrFile && (
+                  <button 
+                    onClick={handleUnselect}
+                    className="p-1 hover:bg-gray-100 rounded-full text-gray-400 hover:text-red-500 transition-colors"
+                    title="Unselect file"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
               </label>
+              {ocrFile && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Type: {ocrFile.type || 'unknown'} | Size: {(ocrFile.size / 1024).toFixed(1)} KB
+                </p>
+              )}
               <p className="text-sm text-gray-500 mt-2">All formats allowed (Images, PDFs, etc.)</p>
             </div>
             
             {loading && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm font-medium">
-                  <span>Processing document...</span>
-                  <span>{progress}%</span>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm font-medium">
+                    <span>Processing document...</span>
+                    <span>{progress}%</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-2.5">
+                    <div 
+                      className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
+                      style={{ width: `${progress}%` }}
+                    ></div>
+                  </div>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div 
-                    className="bg-indigo-600 h-2.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${progress}%` }}
-                  ></div>
-                </div>
+                <button 
+                  onClick={handleCancel}
+                  className="text-red-500 text-sm font-semibold hover:text-red-700 w-full text-center"
+                >
+                  Cancel Process
+                </button>
               </div>
             )}
 

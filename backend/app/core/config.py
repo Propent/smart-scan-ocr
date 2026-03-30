@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
-from typing import List, Union
-from pydantic import field_validator
+from typing import List, Union, Any
+from pydantic import field_validator, Field
 import json
 
 class Settings(BaseSettings):
@@ -11,17 +11,27 @@ class Settings(BaseSettings):
     # OCR Settings
     OCR_LANGUAGES: List[str] = ["en"]
     
-    # CORS (can be a JSON list or comma separated)
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    # CORS - Use str to avoid Pydantic's automatic list parsing which fails on Render
+    BACKEND_CORS_ORIGINS_RAW: str = Field("*", alias="BACKEND_CORS_ORIGINS")
 
-    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
-    @classmethod
-    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
-        if isinstance(v, str) and not v.startswith("["):
-            return [i.strip() for i in v.split(",")]
-        elif isinstance(v, str) and v.startswith("["):
-            return json.loads(v)
-        return v
+    @property
+    def BACKEND_CORS_ORIGINS(self) -> List[str]:
+        v = self.BACKEND_CORS_ORIGINS_RAW
+        if not v or v == "*":
+            return ["*"]
+        
+        if isinstance(v, str):
+            # If it looks like a JSON list
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    # Fallback: remove brackets and quotes, then split by comma
+                    clean_v = v.strip("[]").replace("'", "").replace('"', "")
+                    return [i.strip() for i in clean_v.split(",") if i.strip()]
+            # If it's just a comma-separated string
+            return [i.strip() for i in v.split(",") if i.strip()]
+        return ["*"]
 
     # Storage (local for now)
     UPLOAD_DIR: str = "uploads"
@@ -30,6 +40,8 @@ class Settings(BaseSettings):
     class Config:
         case_sensitive = True
         env_file = ".env"
+        # Allow extra fields so the raw alias doesn't conflict
+        extra = "allow"
 
 @lru_cache()
 def get_settings():

@@ -15,4 +15,6 @@ dependencies = [
     "uvicorn[standard]>=0.42.0",
     "pymupdf>=1.27.2.2",
     "opencv-python-headless>=4.11.0.86",
+    "pypandoc>=1.15",
+    "weasyprint>=63.1",
 ]

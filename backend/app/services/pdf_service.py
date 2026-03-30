@@ -1,65 +1,67 @@
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import A4
-from PIL import Image
-import io
 import fitz  # PyMuPDF
-import os
+import io
 
 class PDFService:
     def create_pdf_from_ocr(self, original_bytes: bytes, ocr_results: list[dict]) -> bytes:
         """
-        Creates a SEARCHABLE PDF with an invisible text layer overlaying the visual scan.
+        Creates a SEARCHABLE PDF using native image dimensions for perfect text alignment.
         """
-        output_io = io.BytesIO()
-        c = canvas.Canvas(output_io, pagesize=A4)
-        a4_w, a4_h = A4
+        doc = fitz.open()
 
-        # 1. Get visual pages (as high-res images for the PDF background)
+        # 1. Prepare visual pages
         if original_bytes.startswith(b'%PDF'):
-            doc = fitz.open(stream=original_bytes, filetype="pdf")
+            src_doc = fitz.open(stream=original_bytes, filetype="pdf")
             images = []
-            for page in doc:
-                pix = page.get_pixmap(dpi=300) # Ensure high visual quality
-                img_data = pix.tobytes("png")
-                images.append(Image.open(io.BytesIO(img_data)))
-            doc.close()
+            for page in src_doc:
+                pix = page.get_pixmap(dpi=300)
+                images.append({"bytes": pix.tobytes("png"), "w": pix.width, "h": pix.height})
+            src_doc.close()
         else:
-            images = [Image.open(io.BytesIO(original_bytes))]
+            # For images, get dimensions directly
+            img_doc = fitz.open(stream=original_bytes)
+            img_page = img_doc[0]
+            images = [{"bytes": original_bytes, "w": img_page.rect.width, "h": img_page.rect.height}]
+            img_doc.close()
 
-        # 2. Add visual pages and their corresponding invisible text
-        for i, img in enumerate(images):
-            img_w, img_h = img.size
-            scale_x = a4_w / img_w
-            scale_y = a4_h / img_h
+        # 2. Build PDF
+        for i, img_data in enumerate(images):
+            # Create page with EXACT same dimensions as the image
+            page = doc.new_page(width=img_data["w"], height=img_data["h"])
             
-            # Draw the visual background (the "scan")
-            c.drawInlineImage(img, 0, 0, width=a4_w, height=a4_h)
+            # Insert the image to fill the page
+            page.insert_image(page.rect, stream=img_data["bytes"])
             
-            # Overlay invisible text layer for this page
+            # Filter OCR results for this page
             page_num = i + 1
-            page_text = [res for res in ocr_results if res.get('page', 1) == page_num]
+            page_text_results = [res for res in ocr_results if res.get('page', 1) == page_num]
             
-            # Set font for the invisible layer
-            c.setFont("Helvetica", 8)
-            text_object = c.beginText()
-            
-            # We use a transparent fill for the text to make it invisible but selectable
-            c.setFillAlpha(0.0) 
-            
-            for res in page_text:
+            for res in page_text_results:
                 text = res['text']
-                bbox = res['bbox'] # Format: [[tl_x, tl_y], [tr_x, tr_y], [br_x, br_y], [bl_x, bl_y]]
+                bbox = res['bbox'] # [[x, y], [x+w, y], [x+w, y+h], [x, y+h]]
                 
-                # Use the top-left coordinate, scaled to A4 size
-                # Note: ReportLab Y coordinate starts from bottom
-                x = bbox[0][0] * scale_x
-                y = a4_h - (bbox[0][1] * scale_y)
+                # Native coordinates (no scaling needed now)
+                x0, y0 = bbox[0][0], bbox[0][1]
+                x1, y1 = bbox[2][0], bbox[2][1]
                 
-                c.drawString(x, y, text)
-            
-            c.showPage()
-            
-        c.save()
-        return output_io.getvalue()
+                # Rectangle for the text
+                rect = fitz.Rect(x0, y0, x1, y1)
+                
+                # Calculate font size to fill the height of the box
+                font_size = max(1, rect.height * 0.8)
+                
+                try:
+                    # Insert text at the bottom-left of the OCR box
+                    # render_mode=3 makes it invisible but searchable
+                    page.insert_text(
+                        fitz.Point(x0, y1), 
+                        text,
+                        fontsize=font_size,
+                        fontname="helv",
+                        render_mode=3
+                    )
+                except Exception:
+                    continue
+
+        return doc.tobytes()
 
 pdf_service = PDFService()
