@@ -16,7 +16,7 @@ function App() {
   const pollStatus = async (id: string) => {
     try {
       const response = await axios.get(`${API_URL}/ocr/status/${id}`)
-      const { status, progress, result_data } = response.data
+      const { status, progress, result_data, error: apiError } = response.data
 
       setProgress(progress)
 
@@ -24,8 +24,9 @@ function App() {
         setOcrResults(result_data || [])
         setLoading(false)
         setStep(2)
-      } else if (status === 'failed') {        setLoading(false)
-        alert(`OCR Failed: ${error}`)
+      } else if (status === 'failed') {
+        setLoading(false)
+        alert(`OCR Failed: ${apiError}`)
       } else {
         // Continue polling
         setTimeout(() => pollStatus(id), 1000)
