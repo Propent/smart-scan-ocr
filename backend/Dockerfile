@@ -11,9 +11,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install WeasyPrint dependencies (GTK stack) - using more robust meta-packages
+# Install WeasyPrint dependencies (GTK stack) - using stable base package names
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpangocairo-1.0-0 \
+    libpango-1.0-0 \
+    libcairo2 \
     libgdk-pixbuf2.0-0 \
     libffi-dev \
     shared-mime-info \

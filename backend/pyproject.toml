@@ -16,5 +16,5 @@ dependencies = [
     "pymupdf>=1.27.2.2",
     "opencv-python-headless>=4.11.0.86",
     "pypandoc>=1.15",
-    "weasyprint>=63.1",
+    "xhtml2pdf>=0.2.16",
 ]

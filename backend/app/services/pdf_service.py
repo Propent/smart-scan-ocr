@@ -13,19 +13,20 @@ class PDFService:
             src_doc = fitz.open(stream=original_bytes, filetype="pdf")
             images = []
             for page in src_doc:
+                # We need the original page dimensions
                 pix = page.get_pixmap(dpi=300)
-                images.append({"bytes": pix.tobytes("png"), "w": pix.width, "h": pix.height})
+                images.append({"bytes": pix.tobytes("png"), "w": page.rect.width, "h": page.rect.height})
             src_doc.close()
         else:
-            # For images, get dimensions directly
+            # For images, get dimensions directly from the image file
             img_doc = fitz.open(stream=original_bytes)
-            img_page = img_doc[0]
-            images = [{"bytes": original_bytes, "w": img_page.rect.width, "h": img_page.rect.height}]
+            img_rect = img_doc[0].rect
+            images = [{"bytes": original_bytes, "w": img_rect.width, "h": img_rect.height}]
             img_doc.close()
 
         # 2. Build PDF
         for i, img_data in enumerate(images):
-            # Create page with EXACT same dimensions as the image
+            # Create page with EXACT same dimensions as the original (in points)
             page = doc.new_page(width=img_data["w"], height=img_data["h"])
             
             # Insert the image to fill the page
@@ -39,19 +40,17 @@ class PDFService:
                 text = res['text']
                 bbox = res['bbox'] # [[x, y], [x+w, y], [x+w, y+h], [x, y+h]]
                 
-                # Native coordinates (no scaling needed now)
+                # These coordinates are now scaled correctly to the original image/PDF page
                 x0, y0 = bbox[0][0], bbox[0][1]
                 x1, y1 = bbox[2][0], bbox[2][1]
                 
-                # Rectangle for the text
-                rect = fitz.Rect(x0, y0, x1, y1)
-                
-                # Calculate font size to fill the height of the box
-                font_size = max(1, rect.height * 0.8)
+                # Calculate font size to match the box height
+                # Helvetica height is roughly 0.7-0.8 of font size
+                font_size = max(1, (y1 - y0) * 0.85)
                 
                 try:
-                    # Insert text at the bottom-left of the OCR box
-                    # render_mode=3 makes it invisible but searchable
+                    # Insert text at the bottom-left baseline
+                    # render_mode=3 makes it invisible but selectable/searchable
                     page.insert_text(
                         fitz.Point(x0, y1), 
                         text,

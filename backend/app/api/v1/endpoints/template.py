@@ -34,19 +34,26 @@ async def generate_document(
 
         # 2. Convert if PDF requested
         if output_format and output_format.lower() == "pdf":
-            final_content = template_service.convert_docx_to_pdf(generated_docx)
-            media_type = "application/pdf"
-            ext = "pdf"
+            try:
+                final_content = template_service.convert_docx_to_pdf(generated_docx)
+                media_type = "application/pdf"
+                ext = "pdf"
+            except RuntimeError as e:
+                # Catch the "PDF conversion disabled" error specifically
+                raise HTTPException(status_code=400, detail=str(e))
         else:
             final_content = generated_docx
             media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             ext = "docx"
 
+        # Prepare safe filename
+        safe_filename = "".join([c for c in template_file.filename or "document" if c.isalnum() or c in "._-"]).rsplit(".", 1)[0]
+        
         return Response(
             content=final_content,
             media_type=media_type,
             headers={
-                "Content-Disposition": f"attachment; filename=generated_{template_file.filename.split('.')[0]}.{ext}"
+                "Content-Disposition": f'attachment; filename="generated_{safe_filename}.{ext}"'
             },
         )
     except json.JSONDecodeError:

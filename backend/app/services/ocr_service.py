@@ -1,6 +1,6 @@
 import pytesseract
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageEnhance
 import io
 import fitz  # PyMuPDF
 import cv2
@@ -8,7 +8,7 @@ import os
 import sys
 import logging
 
-# Standard logging configuration for FastAPI
+# Standard logging configuration
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("app.services.ocr")
 
@@ -20,143 +20,122 @@ class OCRService:
                 pytesseract.pytesseract.tesseract_cmd = default_path
         self.lang = "+".join(['eng' if l == 'en' else l for l in languages])
 
-    def _preprocess_image(self, image_np: np.ndarray) -> np.ndarray:
-        gray = cv2.cvtColor(image_np, cv2.COLOR_RGB2GRAY)
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        return thresh
+    def _preprocess(self, image_np: np.ndarray, mode='standard') -> tuple[np.ndarray, float]:
+        """
+        Production-grade image preprocessing.
+        Returns: (processed_image, scale_factor)
+        """
+        # 1. Convert to Grayscale
+        if len(image_np.shape) == 3:
+            gray = cv2.cvtColor(image_np, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = image_np
+
+        # 2. Rescale (Tesseract performs best when height is ~30-50 pixels per char)
+        h, w = gray.shape
+        scale = 1.0
+        if w < 1500:
+            scale = 2000 / w
+            gray = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+        if mode == 'sharpened':
+            # 3. Enhance Sharpness and Contrast
+            pil_img = Image.fromarray(gray)
+            pil_img = ImageEnhance.Contrast(pil_img).enhance(2.0)
+            pil_img = ImageEnhance.Sharpness(pil_img).enhance(2.5)
+            gray = np.array(pil_img)
+
+        # 4. Adaptive Thresholding
+        thresh = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
+
+        return thresh, scale
+
+    def _extract_single_attempt(self, img_np: np.ndarray, config: str, scale: float) -> list[dict]:
+        data = pytesseract.image_to_data(img_np, lang=self.lang, config=config, output_type=pytesseract.Output.DICT)
+        return self._format_tesseract_data(data, scale)
 
     def _recover_binary_stream(self, file_bytes: bytes) -> bytes:
-        """
-        Extreme recovery logic. Scans every byte offset for a valid signature.
-        """
-        magic_numbers = [
-            b'%PDF',      # PDF
-            b'\x89PNG',    # PNG
-            b'\xff\xd8',  # JPEG
-            b'RIFF',      # WebP
-            b'GIF8',      # GIF
-            b'PK\x03\x04',# Zip/Office
-            b'II\x2a\x00',# TIFF
-            b'MM\x00\x2a',# TIFF
-            b'\x00\x00\x00\x18ftypheic', # HEIC
-        ]
-        
-        # 1. Try a deep brute-force search in the first 4KB
-        search_limit = min(len(file_bytes), 4096)
-        for i in range(search_limit):
-            window = file_bytes[i:i+20]
-            for magic in magic_numbers:
-                if window.startswith(magic):
-                    logger.info(f"DEBUG: RECOVERY SUCCESS! Found {magic!r} at offset {i}")
-                    return file_bytes[i:]
-        
-        # 2. If no magic found, return stripped version as last resort
+        magic_numbers = [b'%PDF', b'\x89PNG', b'\xff\xd8', b'RIFF', b'PK\x03\x04']
+        for magic in magic_numbers:
+            idx = file_bytes.find(magic, 0, 4096)
+            if idx != -1: return file_bytes[idx:]
         return file_bytes.lstrip(b'\x00\r\n ')
 
     def extract_text(self, file_bytes: bytes, on_progress=None) -> list[dict]:
-        if not file_bytes or len(file_bytes) < 10:
-            raise ValueError("Empty or invalid file provided")
-            
-        logger.info(f"DEBUG: File received. Size: {len(file_bytes)} bytes. Raw Header: {file_bytes[:20]!r}")
-
-        # 1. Attempt standard extraction first (fast path)
-        try:
-            return self._extract_from_pdf(file_bytes, on_progress)
-        except Exception:
-            try:
-                return self._extract_from_image(file_bytes, on_progress)
-            except Exception:
-                pass
-
-        # 2. Extreme recovery path (slow path)
-        logger.info("DEBUG: Standard identification failed. Entering Extreme Recovery Mode...")
-        recovered_bytes = self._recover_binary_stream(file_bytes)
-        
-        try:
-            return self._extract_from_pdf(recovered_bytes, on_progress)
-        except Exception:
-            try:
-                return self._extract_from_image(recovered_bytes, on_progress)
-            except Exception as e:
-                # DIAGNOSTIC: Dump failing file
-                try:
-                    debug_path = os.path.join("uploads", "failing_file.bin")
-                    os.makedirs("uploads", exist_ok=True)
-                    with open(debug_path, "wb") as f:
-                        f.write(file_bytes)
-                    logger.error(f"DIAGNOSTIC: Entire failing file dumped to {debug_path} for inspection")
-                except Exception:
-                    pass
-                    
-                raise ValueError(
-                    f"Document Engine Error: Unrecognized file format. "
-                    f"Size: {len(file_bytes)}. Header: {file_bytes[:10]!r}. "
-                    f"Please try a different file format (standard JPG/PNG/PDF)."
-                )
+        if not file_bytes or len(file_bytes) < 10: raise ValueError("Invalid file")
+        cleaned_bytes = self._recover_binary_stream(file_bytes)
+        if cleaned_bytes.startswith(b'%PDF'):
+            return self._extract_from_pdf(cleaned_bytes, on_progress)
+        else:
+            return self._extract_from_image(cleaned_bytes, on_progress)
 
     def _extract_from_image(self, image_bytes: bytes, on_progress=None) -> list[dict]:
         if on_progress: on_progress(10)
-        
-        # Try PIL then OpenCV
         try:
             pil_img = Image.open(io.BytesIO(image_bytes))
-            if pil_img.mode != 'RGB':
-                pil_img = pil_img.convert('RGB')
-            image_np = np.array(pil_img)
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_RGB2BGR)
+            if pil_img.mode != 'RGB': pil_img = pil_img.convert('RGB')
+            image_np = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
         except Exception:
             nparr = np.frombuffer(image_bytes, np.uint8)
             image_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            if image_np is None:
-                raise ValueError("Image decoding failed")
+            if image_np is None: raise ValueError("Decoding failed")
+
+        if on_progress: on_progress(20)
+
+        # Attempt 1: Standard Preprocessing
+        prep_std, scale_std = self._preprocess(image_np, mode='standard')
+        res_std = self._extract_single_attempt(prep_std, '--psm 11', scale_std)
+        conf_std = sum([r['confidence'] for r in res_std]) / len(res_std) if res_std else 0
+
+        # Attempt 2: High Sharpening (if std failed or low confidence)
+        if conf_std < 0.7:
+            prep_sharp, scale_sharp = self._preprocess(image_np, mode='sharpened')
+            res_sharp = self._extract_single_attempt(prep_sharp, '--psm 11', scale_sharp)
+            conf_sharp = sum([r['confidence'] for r in res_sharp]) / len(res_sharp) if res_sharp else 0
             
-        processed_np = self._preprocess_image(image_np)
-        
-        if on_progress: on_progress(40)
-        
-        custom_config = r'--psm 11'
-        data = pytesseract.image_to_data(processed_np, lang=self.lang, config=custom_config, output_type=pytesseract.Output.DICT)
-        
-        results = self._format_tesseract_data(data)
-        
+            if conf_sharp > conf_std:
+                if on_progress: on_progress(100)
+                return res_sharp
+
         if on_progress: on_progress(100)
-        return results
+        return res_std
 
     def _extract_from_pdf(self, pdf_bytes: bytes, on_progress=None) -> list[dict]:
         doc = fitz.open(stream=pdf_bytes)
-        num_pages = len(doc)
-        if num_pages == 0:
-            raise ValueError("No pages found")
-            
         all_results = []
         for i, page in enumerate(doc):
             pix = page.get_pixmap(dpi=300)
             img_data = pix.tobytes("png")
-            nparr = np.frombuffer(img_data, np.uint8)
-            image_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-            processed_np = self._preprocess_image(image_np)
+            # PDF pages are extracted at 300 DPI, so we need to scale boxes back to PDF points
+            # fitz pixmap width/height vs page width/height
+            scale_x = pix.width / page.rect.width
+            scale_y = pix.height / page.rect.height
             
-            custom_config = r'--psm 11'
-            data = pytesseract.image_to_data(processed_np, lang=self.lang, config=custom_config, output_type=pytesseract.Output.DICT)
-            page_results = self._format_tesseract_data(data)
+            # Treat each page as an image
+            page_results = self._extract_from_image(img_data)
             
+            # Adjust coordinates back to PDF points
             for res in page_results:
                 res['page'] = i + 1
-            all_results.extend(page_results)
+                for point in res['bbox']:
+                    point[0] /= scale_x
+                    point[1] /= scale_y
             
-            if on_progress:
-                on_progress(int((i + 1) / num_pages * 100))
-        
+            all_results.extend(page_results)
+            if on_progress: on_progress(int((i + 1) / len(doc) * 100))
         doc.close()
         return all_results
 
-    def _format_tesseract_data(self, data) -> list[dict]:
+    def _format_tesseract_data(self, data, scale: float) -> list[dict]:
         output = []
-        n_boxes = len(data['text'])
-        for i in range(n_boxes):
+        for i in range(len(data['text'])):
             text = data['text'][i].strip()
-            if text:
-                x, y, w, h = data['left'][i], data['top'][i], data['width'][i], data['height'][i]
+            if text and float(data['conf'][i]) > 15:
+                # Scale coordinates back to original image space
+                x, y, w, h = data['left'][i] / scale, data['top'][i] / scale, data['width'][i] / scale, data['height'][i] / scale
                 output.append({
                     "text": text,
                     "confidence": float(data['conf'][i]) / 100.0,

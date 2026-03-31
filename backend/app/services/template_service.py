@@ -2,21 +2,12 @@ from docxtpl import DocxTemplate
 import io
 import os
 import pypandoc
+from xhtml2pdf import pisa
 import tempfile
 import logging
 
 # Set up logging
 logger = logging.getLogger(__name__)
-
-try:
-    from weasyprint import HTML
-    WEASYPRINT_AVAILABLE = True
-except OSError:
-    logger.warning("WeasyPrint dependencies (GTK) not found. PDF conversion will be disabled locally.")
-    WEASYPRINT_AVAILABLE = False
-except ImportError:
-    logger.warning("WeasyPrint not installed. PDF conversion will be disabled.")
-    WEASYPRINT_AVAILABLE = False
 
 class TemplateService:
     def fill_docx_template(self, template_bytes: bytes, context: dict) -> bytes:
@@ -26,8 +17,6 @@ class TemplateService:
         """
         template_io = io.BytesIO(template_bytes)
         doc = DocxTemplate(template_io)
-        
-        # Context is a dictionary of key-value pairs to replace in the template
         doc.render(context)
         
         output_io = io.BytesIO()
@@ -37,26 +26,38 @@ class TemplateService:
     def convert_docx_to_pdf(self, docx_bytes: bytes) -> bytes:
         """
         Converts .docx bytes to a high-quality searchable PDF.
-        Uses Pandoc for structural conversion and WeasyPrint for PDF rendering.
+        Uses Pandoc for structural conversion and xhtml2pdf for pure-python rendering.
+        This version works on Windows and Linux without extra system dependencies.
         """
-        if not WEASYPRINT_AVAILABLE:
-            raise RuntimeError(
-                "PDF conversion is not available on this system because GTK/WeasyPrint dependencies are missing. "
-                "This feature works fully on the Render/Docker deployment."
-            )
-
-        # We need temporary files because Pandoc works best with file paths
+        # 1. Save DOCX to temporary file for Pandoc
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as temp_docx:
             temp_docx.write(docx_bytes)
             temp_docx_path = temp_docx.name
 
         try:
-            # 1. Convert DOCX to HTML using Pandoc (preserves structure best)
-            html_content = pypandoc.convert_file(temp_docx_path, 'html5', format='docx')
+            # 2. Convert DOCX to HTML using Pandoc
+            html_content = pypandoc.convert_file(
+                temp_docx_path, 
+                'html5', 
+                format='docx',
+                extra_args=['--embed-resources', '--standalone']
+            )
+
+            # 3. CRITICAL: xhtml2pdf crashes on modern CSS like :not or :hover
+            # We need to strip out CSS blocks that contain pseudo-selectors
+            import re
+            # Remove modern CSS that xhtml2pdf can't handle
+            html_content = re.sub(r'[^}]*:(hover|not|focus|active|visited)[^{]*{[^}]*}', '', html_content)
+            # Remove @media queries as well
+            html_content = re.sub(r'@media[^{]*{[^}]*}}', '', html_content)
             
-            # 2. Convert HTML to PDF using WeasyPrint
+            # 4. Convert HTML to PDF using xhtml2pdf (Pure Python)
             pdf_io = io.BytesIO()
-            HTML(string=html_content).write_pdf(pdf_io)
+            pisa_status = pisa.CreatePDF(html_content, dest=pdf_io)
+            
+            if pisa_status.err:
+                raise RuntimeError(f"PDF conversion failed: {pisa_status.err}")
+                
             return pdf_io.getvalue()
         finally:
             # Cleanup
