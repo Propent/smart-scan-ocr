@@ -8,4 +8,12 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  build: {
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        format: 'es'
+      }
+    }
+  }
 })

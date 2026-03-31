@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { FileText, Image as ImageIcon, CheckCircle, Download, Loader2, X, UploadCloud } from 'lucide-react'
+import { FileText, Image as ImageIcon, CheckCircle, Download, X, UploadCloud } from 'lucide-react'
 import axios from 'axios'
 
 function App() {
